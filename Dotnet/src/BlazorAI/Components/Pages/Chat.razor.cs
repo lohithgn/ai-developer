@@ -68,7 +68,7 @@ public partial class Chat
                 Type = "object",
                 Properties = new
                 {
-                    Address = new
+                    address = new
                     {
                         Type = "string",
                         Description = "The address to geocode"

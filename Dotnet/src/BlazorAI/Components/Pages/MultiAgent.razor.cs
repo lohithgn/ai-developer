@@ -52,10 +52,10 @@ namespace BlazorAI.Components.Pages
             // TODO: Add plugins for multi-agent scenario
         }
 
-        // Implement the callback to handle agent responses
-        private async ValueTask ResponseCallback(string response)
+        // Handle chat response
+        private async ValueTask HandleChatResponseAsync(string response)
         {
-            // TODO: Implement proper agent response handling
+            // Add assistant response to chat history
             var assistantMessage = new ChatRequestAssistantMessage(response);
             chatRequestMessages?.Add(assistantMessage);
             chatHistory?.Add(ChatMessage.FromChatRequestMessage(assistantMessage));
@@ -98,7 +98,7 @@ namespace BlazorAI.Components.Pages
 
                     var response = await chatClient.CompleteAsync(options);
                     var assistantMessage = response.Value.Content;
-                    await ResponseCallback(assistantMessage ?? string.Empty);
+                    await HandleChatResponseAsync(assistantMessage ?? string.Empty);
                 }
                 catch (Exception ex)
                 {
