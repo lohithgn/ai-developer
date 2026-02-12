@@ -2,27 +2,17 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.JSInterop;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Agents;
-using Microsoft.SemanticKernel.Agents.Magentic;
-using Microsoft.SemanticKernel.Agents.Orchestration;
-using Microsoft.SemanticKernel.Agents.Orchestration.GroupChat;
-using Microsoft.SemanticKernel.Agents.Runtime.InProcess;
-using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
-using System;
-
-
-#pragma warning disable SKEXP0110 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+using Azure.AI.Inference;
+using Azure;
+using BlazorAI.Models;
 
 namespace BlazorAI.Components.Pages
 {
     public partial class MultiAgent
     {
-        private ChatHistory? chatHistory;
-        private IChatCompletionService? chatCompletionService;
-        private OpenAIPromptExecutionSettings? openAIPromptExecutionSettings;
-        private Kernel? kernel;
+        private List<ChatRequestMessage>? chatRequestMessages;
+        private List<ChatMessage>? chatHistory;
+        private ChatCompletionsClient? chatClient;
 
         [Inject]
         public required IConfiguration Configuration { get; set; }
@@ -30,85 +20,55 @@ namespace BlazorAI.Components.Pages
         [Inject]
         private IBackgroundTaskQueue _backgroundTaskQueue { get; set; } = null!;
 
-        private List<Agent> Agents { get; set; } = [];
-
-        private MagenticOrchestration? orchestration;
-
 
         protected void InitializeSemanticKernel()
         {
-            chatHistory = [];
+            chatRequestMessages = new List<ChatRequestMessage>();
+            chatHistory = new List<ChatMessage>();
 
-            var kernelBuilder = Kernel.CreateBuilder();
+            // TODO: Implement multi-agent orchestration using Azure.AI.Projects Agents API
+            // This is a placeholder implementation using basic chat completion
+            var endpoint = new Uri(Configuration["AOI_ENDPOINT"]!);
+            var credential = new AzureKeyCredential(Configuration["AOI_API_KEY"]!);
+            chatClient = new ChatCompletionsClient(endpoint, credential);
 
-            kernelBuilder.AddAzureOpenAIChatCompletion(
-                Configuration["AOI_DEPLOYMODEL"] ?? "gpt-35-turbo",
-                Configuration["AOI_ENDPOINT"]!,
-                Configuration["AOI_API_KEY"]!);
-
-            kernelBuilder.Services.AddSingleton(LoggerFactory);
-
-            kernel = kernelBuilder.Build();
+            var systemMessage = new ChatRequestSystemMessage("You are a helpful AI assistant working in a multi-agent system.");
+            chatRequestMessages.Add(systemMessage);
+            chatHistory.Add(ChatMessage.FromChatRequestMessage(systemMessage));
 
             AddPlugins();
 
             CreateAgents();
-
-            // Implement the orchestration using Magentic below
-
-            
-            // Verify we have agents before proceeding
-            if (Agents.Count == 0)
-            {
-                throw new InvalidOperationException("No agents were created. Check agent creation logic.");
-            }
-
         }
 
         private void CreateAgents()
         {
-            if (kernel is null)
-            {
-                throw new InvalidOperationException("Kernel must be initialized before creating agents.");
-            }
-            
-            // Clear existing agents
-            Agents.Clear();
-
-            // Append the agents to the Agents list
-            // Create a Business Analyst Agent
-
-
-            // Create a Software Engineer Agent
-
-
-            // Create a Product Owner Agent
-
+            // TODO: Implement agents using Azure.AI.Projects Agents API
+            // This is a placeholder - actual multi-agent implementation will be in Phase 7
         }
 
         private void AddPlugins()
         {
-
+            // TODO: Add plugins for multi-agent scenario
         }
 
         // Implement the callback to handle agent responses
-        private async ValueTask ResponseCallback(ChatMessageContent response)
+        private async ValueTask ResponseCallback(string response)
         {
-            // Imlement the logic to handle the response from the agents
-
-
-
+            // TODO: Implement proper agent response handling
+            var assistantMessage = new ChatRequestAssistantMessage(response);
+            chatRequestMessages?.Add(assistantMessage);
+            chatHistory?.Add(ChatMessage.FromChatRequestMessage(assistantMessage));
 
             // This is used to update the UI with the new message
             await InvokeAsync(StateHasChanged);
-
         }
 
         private async Task SendMessage()
         {
-            if (orchestration is null)
+            if (chatClient is null)
             {
-                throw new InvalidOperationException("The 'orchestration' field must be initialized before sending messages.");
+                throw new InvalidOperationException("The 'chatClient' field must be initialized before sending messages.");
             }
 
             // Copy the message from the user input - just like in Chat.razor.cs
@@ -116,38 +76,40 @@ namespace BlazorAI.Components.Pages
             var userMessage = MessageInput;
             MessageInput = string.Empty;
             loading = true;
-            // While the agent orchestration has its own chat history, we also maintain a local chat history for UI updates
-            chatHistory!.AddUserMessage(userMessage);
+            
+            var userRequestMessage = new ChatRequestUserMessage(userMessage);
+            chatRequestMessages!.Add(userRequestMessage);
+            chatHistory!.Add(ChatMessage.FromChatRequestMessage(userRequestMessage));
             StateHasChanged();
 
             // Use the injected _backgroundTaskQueue instance to queue the background chat orchestration task
             // This allows the UI to remain responsive while the orchestration runs in the background
             await _backgroundTaskQueue.QueueBackgroundWorkItemAsync(async token =>
             {
-                // Implement the runtime
-
                 try
                 {
-                    // Create a prompt for the orchestration, including the user message
+                    // TODO: Implement proper multi-agent orchestration
+                    // For now, using basic chat completion as placeholder
+                    var options = new ChatCompletionsOptions()
+                    {
+                        Messages = chatRequestMessages,
+                        Model = Configuration["AOI_DEPLOYMODEL"]
+                    };
 
-
-                    // Invoke the orchestration with the prompt and runtime.
-                    // Note the timeout is set to 600 seconds (10 minutes) to allow for longer processing times
-                    
+                    var response = await chatClient.CompleteAsync(options);
+                    var assistantMessage = response.Value.Content;
+                    await ResponseCallback(assistantMessage ?? string.Empty);
                 }
                 catch (Exception ex)
                 {
-                    chatHistory.AddAssistantMessage($"Error: {ex.Message}");
+                    var errorMsg = new ChatMessage("assistant", $"Error: {ex.Message}");
+                    chatHistory.Add(errorMsg);
                 }
                 finally
                 {
-                    // Ensure the runtime is disposed of properly
-
-
                     // Ensure the UI is updated after the orchestration completes
                     loading = false;
                     await InvokeAsync(StateHasChanged);
-
                 }
             });
         }

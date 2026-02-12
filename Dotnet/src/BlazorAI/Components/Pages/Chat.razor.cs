@@ -1,18 +1,15 @@
 ﻿using Microsoft.AspNetCore.Components;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
-
-#pragma warning disable SKEXP0040 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-#pragma warning disable SKEXP0020 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-#pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-#pragma warning disable SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+using Azure.AI.Inference;
+using Azure;
+using BlazorAI.Models;
 
 namespace BlazorAI.Components.Pages;
 
 public partial class Chat
 {
-    private ChatHistory? chatHistory;
-    private Kernel? kernel;
+    private List<ChatRequestMessage>? chatRequestMessages;
+    private List<ChatMessage>? chatHistory;
+    private ChatCompletionsClient? chatClient;
 
     [Inject]
     public required IConfiguration Configuration { get; set; }
@@ -21,22 +18,21 @@ public partial class Chat
 
     protected async Task InitializeSemanticKernel()
     {
-        chatHistory = [];
+        chatRequestMessages = new List<ChatRequestMessage>();
+        chatHistory = new List<ChatMessage>();
 
-        // Challenge 02 - Configure Semantic Kernel
-        var kernelBuilder = Kernel.CreateBuilder();
+        // Challenge 02 - Configure Azure AI Inference Client
+        var endpoint = new Uri(Configuration["AOI_ENDPOINT"]!);
+        var credential = new AzureKeyCredential(Configuration["AOI_API_KEY"]!);
+        chatClient = new ChatCompletionsClient(endpoint, credential);
 
-        // Challenge 02 - Add OpenAI Chat Completion
-        kernelBuilder.AddAzureOpenAIChatCompletion(
-            Configuration["AOI_DEPLOYMODEL"]!,
-            Configuration["AOI_ENDPOINT"]!,
-            Configuration["AOI_API_KEY"]!);
-
-        // Add Logger for Kernel
-        kernelBuilder.Services.AddSingleton(LoggerFactory);
+        // Add system message to set the context
+        var systemMessage = new ChatRequestSystemMessage("You are a helpful AI assistant.");
+        chatRequestMessages.Add(systemMessage);
+        chatHistory.Add(ChatMessage.FromChatRequestMessage(systemMessage));
 
         // Challenge 03 and 04 - Services Required
-        kernelBuilder.Services.AddHttpClient();
+        // No additional setup needed for Azure AI Inference
 
         // Challenge 05 - Register Azure AI Foundry Text Embeddings Generation
 
@@ -47,15 +43,11 @@ public partial class Chat
         // Challenge 07 - Add Azure AI Foundry Text To Image
 
 
-        // Challenge 02 - Finalize Kernel Builder
-        kernel = kernelBuilder.Build();
-
         // Challenge 03, 04, 05, & 07 - Add Plugins
         await AddPlugins();
 
-        // Challenge 03 - Create OpenAIPromptExecutionSettings
-
-
+        // Challenge 03 - Create ChatCompletionsOptions
+        // This will be handled per request in SendMessage
     }
 
 
@@ -73,7 +65,7 @@ public partial class Chat
 
     private async Task SendMessage()
     {
-        if (!string.IsNullOrWhiteSpace(newMessage) && chatHistory != null)
+        if (!string.IsNullOrWhiteSpace(newMessage) && chatRequestMessages != null && chatHistory != null && chatClient != null)
         {
             // This tells Blazor the UI is going to be updated.
             StateHasChanged();
@@ -83,14 +75,25 @@ public partial class Chat
             newMessage = string.Empty;
             StateHasChanged();
 
-            // Challenge 02 - Retrieve the chat completion service
-
             // Challenge 02 - Update Chat History
+            var userRequestMessage = new ChatRequestUserMessage(userMessage);
+            chatRequestMessages.Add(userRequestMessage);
+            chatHistory.Add(ChatMessage.FromChatRequestMessage(userRequestMessage));
 
             // Challenge 02 - Send a message to the chat completion service
+            var options = new ChatCompletionsOptions()
+            {
+                Messages = chatRequestMessages,
+                Model = Configuration["AOI_DEPLOYMODEL"]
+            };
+
+            var response = await chatClient.CompleteAsync(options);
 
             // Challenge 02 - Add Response to the Chat History object
-
+            var assistantMessage = response.Value.Content;
+            var assistantRequestMessage = new ChatRequestAssistantMessage(assistantMessage);
+            chatRequestMessages.Add(assistantRequestMessage);
+            chatHistory.Add(ChatMessage.FromChatRequestMessage(assistantRequestMessage));
 
             loading = false;
         }
